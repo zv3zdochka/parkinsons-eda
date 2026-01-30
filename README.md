@@ -1,4 +1,3 @@
-````markdown
 # Parkinson's Voice Dataset — EDA & Classification Pipeline
 
 This repository implements a small, reproducible pipeline for exploring and modeling the **Oxford Parkinson's Disease Detection Dataset** (UCI ML Repository, dataset id=174, DOI: `10.24432/C59C74`).
@@ -79,5 +78,4 @@ python 0_data_profile.py --input dataset/parkinsons.data
 
 Later we will add a single orchestrator to run all stages sequentially.
 
-```
-```
+
