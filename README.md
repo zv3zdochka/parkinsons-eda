@@ -27,19 +27,17 @@ The `name` column encodes the subject identifier and recording number.
 ## Project goal (what we are building)
 
 The overall goal is to build a clean pipeline that:
-1. **Profiles** the dataset and validates assumptions,
-2. performs structured **EDA** and feature checks,
-3. trains baseline **classification** models for PD detection,
+1. Profiles the dataset and validates assumptions,
+2. performs structured EDA and feature checks,
+3. trains baseline classification models for PD detection,
 4. evaluates models correctly (group-aware splitting, robust metrics, reproducibility).
 
 ---
 
-## Stage 0 — Dataset description (current)
+## Stage 0 — Dataset description (answers TЗ #0)
 
-Stage 0 prints a console report documenting:
-- dataset shape and missing values,
-- column roles (ID / target / features),
-- feature typing (quantitative vs categorical).
+**TЗ question:**  
+0. Provide a dataset description. Which features are quantitative, categorical, nominal?
 
 ### Run
 
@@ -52,28 +50,77 @@ python 0_data_profile.py --input dataset/parkinsons.data
 * **Rows:** 195
 * **Columns:** 24
 * **Missing values:** 0
-* **ID column:** `name` (nominal identifier)
-* **Target column:** `status` (binary nominal label)
+* **ID column:** `name` (categorical, **nominal identifier**)
+* **Target column:** `status` (categorical, **nominal label**)
 * **Feature columns:** 22
-* **Inferred feature typing:**
 
-  * Quantitative (real-valued): **22**
-  * Categorical (nominal among features): **0**
+**Feature types:**
+
+* **Quantitative (real-valued): 22**
+  All modeling features are numeric biomedical voice measurements (floats).
+* **Categorical among features: 0**
+  No categorical predictors are present in this dataset version.
+* **Nominal variables:**
+  `name` (ID) and `status` (binary target) are nominal.
 
 ### Notes from Stage 0
 
 * Many features have very high cardinality (often unique per row), which is expected for continuous voice measurements.
-* `MDVP:Jitter(Abs)` shows low cardinality (19 unique values), likely due to rounding/quantization; this is not an error but worth remembering during EDA.
-* The dataset includes multiple recordings per subject (encoded in `name`). For reliable evaluation, later stages should extract a subject ID and use **group-aware splits** (e.g., `GroupKFold`, `GroupShuffleSplit`).
+* `MDVP:Jitter(Abs)` has low cardinality (19 unique values), likely due to rounding/quantization.
+* Multiple recordings per subject are encoded in `name`; later stages should extract a subject ID and use **group-aware splits**.
+
+---
+
+## Stage 1 — Missing values audit & handling (answers TЗ #1)
+
+**TЗ question:**
+
+1. Are there missing values? What percentage do they represent relative to the number of rows? Why might they appear?
+   If missing values exist, choose a handling method per column, justify it, and process missing values.
+
+### Run
+
+```bash
+python 1_missing_values.py --input dataset/parkinsons.data --output dataset/parkinsons_clean.csv
+```
+
+### Observed results (from `dataset/parkinsons.data`)
+
+* **Total missing cells:** 0
+* **Missingness as % of rows:** **0.000000%**
+* **Columns with missing values:** none
+* A cleaned copy was written to: `dataset/parkinsons_clean.csv`
+  (no changes were necessary, but this file is used as a stable input for later stages).
+
+### Why missing values may appear (general reasons)
+
+Even though this dataset version contains no missing values, typical sources of missingness in biomedical measurement data include:
+
+* recording/sensor artifacts (noise, clipping, corrupted audio),
+* preprocessing/feature-extraction failures (feature not computable for a recording),
+* data integration issues (manual entry, merges, inconsistent identifiers),
+* dataset version differences across releases.
+
+### Handling strategy (defined for robustness)
+
+If missingness were present, the pipeline would apply the following defensible rules:
+
+* **ID (`name`) and target (`status`):** drop rows if missing
+  (identity and labels cannot be imputed safely without introducing errors/leakage)
+* **Numeric features:** median imputation
+  (robust to outliers; appropriate for biomedical signals)
+* **Categorical features:** most frequent value (mode)
+  (standard baseline for nominal features)
+
+**In this run:** no imputation and no row drops were required.
 
 ---
 
 ## How to run stages
 
-Activate your virtual environment and run any stage script directly:
-
 ```bash
 python 0_data_profile.py --input dataset/parkinsons.data
+python 1_missing_values.py --input dataset/parkinsons.data --output dataset/parkinsons_clean.csv
 ```
 
 Later we will add a single orchestrator to run all stages sequentially.
