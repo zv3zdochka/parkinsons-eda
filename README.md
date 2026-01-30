@@ -126,3 +126,47 @@ python 1_missing_values.py --input dataset/parkinsons.data --output dataset/park
 Later we will add a single orchestrator to run all stages sequentially.
 
 
+## Stage 2 — Type checks + descriptive statistics (answers TЗ #2 and #3)
+
+**TЗ questions:**
+2. Do the dataset dtypes match what we need (e.g., no numeric variables stored as strings)? Fix issues if needed.  
+3. Compute descriptive statistics for all variables.
+
+### Run
+
+```bash
+python 2_types_and_stats.py --input dataset/parkinsons_clean.csv --output dataset/parkinsons_typed.csv
+````
+
+### Observed results (from `dataset/parkinsons_clean.csv`)
+
+**Type validation (Task #2)**
+
+* Rows: **195 → 195**, Columns: **24**
+* `name` (ID): `str` → **pandas `string`** (normalized for stable text handling)
+* `status` (target): **`int64`** (validated binary labels and kept as integer)
+* Non-numeric feature columns detected: **0**
+* Rows dropped due to missing ID/target: **0**
+* Missing values after coercion: **none** (no imputation needed)
+
+A schema-normalized copy was saved to: `dataset/parkinsons_typed.csv`.
+
+**Descriptive statistics (Task #3)**
+
+* Target distribution:
+
+  * `status=0`: **48** rows (**24.62%**)
+  * `status=1`: **147** rows (**75.38%**)
+
+* Numeric summary statistics were computed for all 22 real-valued voice features
+  (count/mean/std/min/25%/50%/75%/max).
+
+* Nominal summaries were computed for `name` (all unique) and `status` (binary).
+
+### Notes
+
+* The dataset is **class-imbalanced** (≈75% PD). Later modeling stages should consider metrics
+  beyond raw accuracy (e.g., ROC-AUC, PR-AUC, balanced accuracy) and proper validation.
+* Some variables exhibit long-tailed ranges (e.g., `NHR`, `MDVP:Fhi(Hz)`), which is typical for
+  biomedical measurements and may motivate robust scaling or outlier-aware analysis later.
+
