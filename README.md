@@ -170,3 +170,103 @@ A schema-normalized copy was saved to: `dataset/parkinsons_typed.csv`.
 * Some variables exhibit long-tailed ranges (e.g., `NHR`, `MDVP:Fhi(Hz)`), which is typical for
   biomedical measurements and may motivate robust scaling or outlier-aware analysis later.
 
+---
+
+## Stage 3 — Feature inspection, outliers/errors, correlation (answers TЗ #4–#6)
+
+**TЗ questions:**
+4. Inspect each feature. What values does it take?
+   - numeric: value range
+   - categorical: unique values
+5. Are there outliers or errors (e.g., negative price)? How do you define them? Handle outliers.
+6. Build the correlation matrix for numeric variables.
+
+### Run
+
+```bash
+python 3_feature_audit_outliers_corr.py --input dataset/parkinsons_typed.csv --output dataset/parkinsons_stage3.csv --corr-output reports/corr_stage3.csv
+````
+
+### Observed results (from `dataset/parkinsons_typed.csv`)
+
+**Task #4 — Feature inspection**
+
+* Numeric features: **22**
+* Nominal/categorical columns: **2**
+
+  * `name`: **195 unique** (identifier, one per recording)
+  * `status`: **2 unique** values (0, 1)
+
+Numeric feature ranges (min → max):
+
+* `MDVP:Fo(Hz)`: 88.333 → 260.105
+* `MDVP:Fhi(Hz)`: 102.145 → 592.030
+* `MDVP:Flo(Hz)`: 65.476 → 239.170
+* `MDVP:Jitter(%)`: 0.001680 → 0.033160
+* `MDVP:Jitter(Abs)`: 0.000007 → 0.000260
+* `MDVP:RAP`: 0.000680 → 0.021440
+* `MDVP:PPQ`: 0.000920 → 0.019580
+* `Jitter:DDP`: 0.002040 → 0.064330
+* `MDVP:Shimmer`: 0.009540 → 0.119080
+* `MDVP:Shimmer(dB)`: 0.085 → 1.302
+* `Shimmer:APQ3`: 0.004550 → 0.056470
+* `Shimmer:APQ5`: 0.005700 → 0.079400
+* `MDVP:APQ`: 0.007190 → 0.137780
+* `Shimmer:DDA`: 0.013640 → 0.169420
+* `NHR`: 0.000650 → 0.314820
+* `HNR`: 8.441 → 33.047
+* `RPDE`: 0.256570 → 0.685151
+* `DFA`: 0.574282 → 0.825288
+* `spread1`: -7.964984 → -2.434031
+* `spread2`: 0.006274 → 0.450493
+* `D2`: 1.423287 → 3.671155
+* `PPE`: 0.044539 → 0.527367
+
+**Task #5 — Outliers / errors**
+Definitions used:
+
+* **Errors (domain violations):** values that violate conservative domain rules (e.g., negative frequencies, `RPDE`/`DFA` outside [0,1]).
+  Treatment: set to NaN → median imputation (numeric).
+* **Outliers (statistical extremes):** Tukey IQR rule with **k=1.5** (outside `[Q1 - 1.5·IQR, Q3 + 1.5·IQR]`).
+  Treatment: **winsorization** (clip to the IQR fences), to preserve the small dataset size.
+
+Observed:
+
+* Domain violations detected: **none**
+* IQR outliers detected (before winsorization): **173 cells**
+  Most affected columns:
+
+  * `NHR` (19), `MDVP:PPQ` (15), `Jitter:DDP` (14), `MDVP:Jitter(%)` (14), `MDVP:RAP` (14),
+  * `Shimmer:APQ5` (13), `MDVP:APQ` (12), `MDVP:Fhi(Hz)` (11), `MDVP:Shimmer(dB)` (10), `MDVP:Flo(Hz)` (9), ...
+* Winsorized (clipped) cells: **173**
+* Median imputation: **not needed** (no invalid/missing values after checks)
+
+A cleaned dataset after winsorization was saved to: `dataset/parkinsons_stage3.csv`.
+
+**Task #6 — Correlation matrix**
+
+* Pearson correlation matrix was computed for **all numeric features** (target excluded) and saved to:
+  `reports/corr_stage3.csv`.
+
+Top 15 correlated feature pairs (by |corr|):
+
+* `MDVP:RAP` vs `Jitter:DDP`: **1.000**
+* `Shimmer:APQ3` vs `Shimmer:DDA`: **1.000**
+* `MDVP:Shimmer` vs `MDVP:Shimmer(dB)`: **0.992**
+* `MDVP:Shimmer` vs `Shimmer:APQ3`: **0.990**
+* `MDVP:Shimmer` vs `Shimmer:DDA`: **0.990**
+* `MDVP:Shimmer` vs `Shimmer:APQ5`: **0.985**
+* `MDVP:Jitter(%)` vs `Jitter:DDP`: **0.979**
+* `MDVP:Jitter(%)` vs `MDVP:RAP`: **0.979**
+* `MDVP:Shimmer(dB)` vs `Shimmer:APQ5`: **0.978**
+* `MDVP:Shimmer(dB)` vs `Shimmer:APQ3`: **0.976**
+* `MDVP:Shimmer(dB)` vs `Shimmer:DDA`: **0.976**
+* `MDVP:Shimmer` vs `MDVP:APQ`: **0.970**
+* `Shimmer:APQ3` vs `Shimmer:APQ5`: **0.969**
+* `Shimmer:APQ5` vs `Shimmer:DDA`: **0.969**
+* `MDVP:Jitter(%)` vs `MDVP:PPQ`: **0.968**
+
+### Notes
+
+* Several feature groups are **near-duplicates** (correlations ≈ 0.97–1.00), reflecting that many jitter/shimmer measures are derived from closely related formulas.
+* Winsorization reduces the influence of extreme values while preserving the dataset size; later modeling may additionally benefit from scaling and/or feature selection to address multicollinearity.
