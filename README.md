@@ -1,82 +1,96 @@
-# Parkinson's Voice Dataset — EDA & Classification Pipeline
+# Parkinson’s Voice Dataset  
+Reproducible EDA and Classification Pipeline
 
-This repository implements a small, reproducible pipeline for exploring and modeling the **Oxford Parkinson's Disease Detection Dataset** (UCI ML Repository, dataset id=174, DOI: `10.24432/C59C74`).
+This repository contains a compact, reproducible pipeline for exploratory data analysis and baseline modeling on the **Oxford Parkinson’s Disease Detection Dataset**. The dataset consists of biomedical voice measurements extracted from speech recordings and is widely used as a benchmark for Parkinson’s disease detection from voice features.
 
-The codebase is organized as a sequence of **numbered stages** (`0_*.py`, `1_*.py`, ...).  
-Each stage is runnable via CLI and exposes a stable `run()` entrypoint so we can later execute all stages from a single orchestrator.
-
----
-
-## Dataset (what it is)
-
-The dataset contains biomedical voice measurements extracted from speech recordings of **31 subjects**:
-- **23** subjects with Parkinson’s disease (PD)
-- **8** healthy controls
-
-Each row corresponds to a **single voice recording**. Most subjects have multiple recordings.  
-The classification target is the `status` column:
-- `0` — healthy
-- `1` — Parkinson’s disease
-
-The `name` column encodes the subject identifier and recording number.
-
-**Important:** Because there are multiple recordings per subject, **row-wise random splits can cause subject leakage**. Proper evaluation should prefer **group-based splits by subject**.
+The project is implemented as a sequence of standalone stages. Each stage is runnable from the command line and produces a clear artifact such as a cleaned dataset, a report, or a set of figures. The goal is to keep the analysis transparent, repeatable, and suitable for academic reporting.
 
 ---
 
-## Project goal (what we are building)
+## Dataset overview
 
-The overall goal is to build a clean pipeline that:
-1. Profiles the dataset and validates assumptions,
-2. performs structured EDA and feature checks,
-3. trains baseline classification models for PD detection,
-4. evaluates models correctly (group-aware splitting, robust metrics, reproducibility).
+The data includes voice measurements derived from sustained vowel phonations. Each row corresponds to **one recording**. Many subjects contribute **multiple recordings**, which is important for correct evaluation because splitting data randomly by rows can lead to subject leakage.
+
+### Columns and roles
+
+- **Identifier:** `name`  
+  A nominal identifier that encodes the subject and the recording index.
+- **Target:** `status`  
+  A binary label where `0` indicates a healthy control and `1` indicates Parkinson’s disease.
+- **Features:** 22 numeric variables  
+  All predictors are quantitative and represent acoustic and nonlinear signal measures.
+
+### Practical implication for evaluation
+
+Because there are multiple recordings per subject, model evaluation should use **group-aware splitting by subject**, rather than naive row-wise random splitting. This prevents leakage, where recordings from the same person appear in both training and test sets.
 
 ---
 
-## Stage 0 — Dataset description (answers TЗ #0)
+## Project structure
 
-**TЗ question:**  
-0. Provide a dataset description. Which features are quantitative, categorical, nominal?
+The pipeline is organized as **numbered stages**:
 
-### Run
+- `0_data_profile.py`  
+- `1_missing_values.py`  
+- `2_types_and_stats.py`  
+- `3_feature_audit_outliers_corr.py`  
+- `4_visualize_data.py`
+
+Each stage reads an input dataset, applies a clearly defined transformation or analysis step, and writes outputs to disk.
+
+---
+
+## Environment setup
+
+Create and activate a virtual environment and install dependencies.
 
 ```bash
-python 0_data_profile.py --input dataset/parkinsons.data
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# macOS / Linux
+source .venv/bin/activate
+
+pip install -r requirements.txt
 ````
 
-### Observed results (from `dataset/parkinsons.data`)
+If you want the pairwise plots and heatmaps in Stage 4, make sure seaborn is installed.
 
-* **Rows:** 195
-* **Columns:** 24
-* **Missing values:** 0
-* **ID column:** `name` (categorical, **nominal identifier**)
-* **Target column:** `status` (categorical, **nominal label**)
-* **Feature columns:** 22
-
-**Feature types:**
-
-* **Quantitative (real-valued): 22**
-  All modeling features are numeric biomedical voice measurements (floats).
-* **Categorical among features: 0**
-  No categorical predictors are present in this dataset version.
-* **Nominal variables:**
-  `name` (ID) and `status` (binary target) are nominal.
-
-### Notes from Stage 0
-
-* Many features have very high cardinality (often unique per row), which is expected for continuous voice measurements.
-* `MDVP:Jitter(Abs)` has low cardinality (19 unique values), likely due to rounding/quantization.
-* Multiple recordings per subject are encoded in `name`; later stages should extract a subject ID and use **group-aware splits**.
+```bash
+pip install seaborn
+```
 
 ---
 
-## Stage 1 — Missing values audit & handling (answers TЗ #1)
+## Stage 0
 
-**TЗ question:**
+Dataset profiling and feature typing
 
-1. Are there missing values? What percentage do they represent relative to the number of rows? Why might they appear?
-   If missing values exist, choose a handling method per column, justify it, and process missing values.
+This stage provides a structured overview of the dataset, including shape, column roles, and feature types.
+
+### Run
+
+```bash
+python 0_data_profile.py --input dataset/parkinsons.data
+```
+
+### Findings
+
+* The dataset contains **195 rows** and **24 columns**
+* The identifier column `name` is nominal and uniquely identifies recordings
+* The target column `status` is binary and nominal
+* All 22 predictors are **quantitative numeric features**
+* The dataset contains **no missing values** in this source version
+
+This stage confirms that the dataset is already in a machine learning friendly form. The only non-numeric column is the identifier, which should not be used as a predictor.
+
+---
+
+## Stage 1
+
+Missing value audit and robust handling policy
+
+This stage audits missingness and applies a consistent handling strategy designed for robustness across dataset variants.
 
 ### Run
 
@@ -84,189 +98,188 @@ python 0_data_profile.py --input dataset/parkinsons.data
 python 1_missing_values.py --input dataset/parkinsons.data --output dataset/parkinsons_clean.csv
 ```
 
-### Observed results (from `dataset/parkinsons.data`)
+### Findings
 
-* **Total missing cells:** 0
-* **Missingness as % of rows:** **0.000000%**
-* **Columns with missing values:** none
-* A cleaned copy was written to: `dataset/parkinsons_clean.csv`
-  (no changes were necessary, but this file is used as a stable input for later stages).
+* Missing cells: **0**
+* Missingness relative to row count: **0.000000%**
+* No columns contain missing values
 
-### Why missing values may appear (general reasons)
+Even when missingness is absent, the pipeline keeps a clear policy for biomedical datasets:
 
-Even though this dataset version contains no missing values, typical sources of missingness in biomedical measurement data include:
+* Missing identifier or target values require dropping affected rows
+  Identity and labels cannot be imputed safely.
+* Missing numeric features are filled using median imputation
+  Median is robust to outliers and appropriate for skewed biomedical measurements.
+* Missing categorical features are filled using the most frequent value
+  This is a standard baseline for nominal variables.
 
-* recording/sensor artifacts (noise, clipping, corrupted audio),
-* preprocessing/feature-extraction failures (feature not computable for a recording),
-* data integration issues (manual entry, merges, inconsistent identifiers),
-* dataset version differences across releases.
-
-### Handling strategy (defined for robustness)
-
-If missingness were present, the pipeline would apply the following defensible rules:
-
-* **ID (`name`) and target (`status`):** drop rows if missing
-  (identity and labels cannot be imputed safely without introducing errors/leakage)
-* **Numeric features:** median imputation
-  (robust to outliers; appropriate for biomedical signals)
-* **Categorical features:** most frequent value (mode)
-  (standard baseline for nominal features)
-
-**In this run:** no imputation and no row drops were required.
+The output `dataset/parkinsons_clean.csv` serves as a stable input for later stages.
 
 ---
 
-## How to run stages
+## Stage 2
 
-```bash
-python 0_data_profile.py --input dataset/parkinsons.data
-python 1_missing_values.py --input dataset/parkinsons.data --output dataset/parkinsons_clean.csv
-```
+Type validation and descriptive statistics
 
-Later we will add a single orchestrator to run all stages sequentially.
-
-
-## Stage 2 — Type checks + descriptive statistics (answers TЗ #2 and #3)
-
-**TЗ questions:**
-2. Do the dataset dtypes match what we need (e.g., no numeric variables stored as strings)? Fix issues if needed.  
-3. Compute descriptive statistics for all variables.
+This stage ensures that data types match analytical expectations and computes descriptive statistics for all variables.
 
 ### Run
 
 ```bash
 python 2_types_and_stats.py --input dataset/parkinsons_clean.csv --output dataset/parkinsons_typed.csv
-````
+```
 
-### Observed results (from `dataset/parkinsons_clean.csv`)
+### Findings
 
-**Type validation (Task #2)**
+The identifier column is normalized to a stable string dtype, and the target is validated and retained as an integer binary label.
 
-* Rows: **195 → 195**, Columns: **24**
-* `name` (ID): `str` → **pandas `string`** (normalized for stable text handling)
-* `status` (target): **`int64`** (validated binary labels and kept as integer)
-* Non-numeric feature columns detected: **0**
-* Rows dropped due to missing ID/target: **0**
-* Missing values after coercion: **none** (no imputation needed)
+The class distribution shows a pronounced imbalance:
 
-A schema-normalized copy was saved to: `dataset/parkinsons_typed.csv`.
+* Healthy control: **48 recordings**
+* Parkinson’s disease: **147 recordings**
 
-**Descriptive statistics (Task #3)**
+This imbalance is important for downstream modeling. Accuracy alone is not a reliable metric, and later evaluation should include metrics such as ROC AUC, PR AUC, and balanced accuracy.
 
-* Target distribution:
-
-  * `status=0`: **48** rows (**24.62%**)
-  * `status=1`: **147** rows (**75.38%**)
-
-* Numeric summary statistics were computed for all 22 real-valued voice features
-  (count/mean/std/min/25%/50%/75%/max).
-
-* Nominal summaries were computed for `name` (all unique) and `status` (binary).
-
-### Notes
-
-* The dataset is **class-imbalanced** (≈75% PD). Later modeling stages should consider metrics
-  beyond raw accuracy (e.g., ROC-AUC, PR-AUC, balanced accuracy) and proper validation.
-* Some variables exhibit long-tailed ranges (e.g., `NHR`, `MDVP:Fhi(Hz)`), which is typical for
-  biomedical measurements and may motivate robust scaling or outlier-aware analysis later.
+The stage also computes standard descriptive statistics for all numeric features, including mean, standard deviation, quartiles, and extrema. Many variables exhibit long-tailed behavior, which is typical for acoustic measurements and motivates robust preprocessing choices.
 
 ---
 
-## Stage 3 — Feature inspection, outliers/errors, correlation (answers TЗ #4–#6)
+## Stage 3
 
-**TЗ questions:**
-4. Inspect each feature. What values does it take?
-   - numeric: value range
-   - categorical: unique values
-5. Are there outliers or errors (e.g., negative price)? How do you define them? Handle outliers.
-6. Build the correlation matrix for numeric variables.
+Feature inspection, outlier treatment, and correlation analysis
+
+This stage inspects feature ranges, detects domain inconsistencies, applies outlier treatment, and computes the correlation matrix for numeric variables.
 
 ### Run
 
 ```bash
 python 3_feature_audit_outliers_corr.py --input dataset/parkinsons_typed.csv --output dataset/parkinsons_stage3.csv --corr-output reports/corr_stage3.csv
-````
+```
 
-### Observed results (from `dataset/parkinsons_typed.csv`)
+### Feature ranges
 
-**Task #4 — Feature inspection**
+All 22 predictors are numeric, and their values fall in plausible ranges for this dataset. One feature, `spread1`, naturally takes negative values by definition, so negative values in this column are not an error.
 
-* Numeric features: **22**
-* Nominal/categorical columns: **2**
+### Error and outlier definition
 
-  * `name`: **195 unique** (identifier, one per recording)
-  * `status`: **2 unique** values (0, 1)
+Two distinct concepts are used:
 
-Numeric feature ranges (min → max):
+**Domain violations**
+Values that violate conservative domain assumptions such as negative frequencies or probability-like measures outside the interval from 0 to 1. These are treated as invalid values and would be replaced using median imputation after marking them as missing.
 
-* `MDVP:Fo(Hz)`: 88.333 → 260.105
-* `MDVP:Fhi(Hz)`: 102.145 → 592.030
-* `MDVP:Flo(Hz)`: 65.476 → 239.170
-* `MDVP:Jitter(%)`: 0.001680 → 0.033160
-* `MDVP:Jitter(Abs)`: 0.000007 → 0.000260
-* `MDVP:RAP`: 0.000680 → 0.021440
-* `MDVP:PPQ`: 0.000920 → 0.019580
-* `Jitter:DDP`: 0.002040 → 0.064330
-* `MDVP:Shimmer`: 0.009540 → 0.119080
-* `MDVP:Shimmer(dB)`: 0.085 → 1.302
-* `Shimmer:APQ3`: 0.004550 → 0.056470
-* `Shimmer:APQ5`: 0.005700 → 0.079400
-* `MDVP:APQ`: 0.007190 → 0.137780
-* `Shimmer:DDA`: 0.013640 → 0.169420
-* `NHR`: 0.000650 → 0.314820
-* `HNR`: 8.441 → 33.047
-* `RPDE`: 0.256570 → 0.685151
-* `DFA`: 0.574282 → 0.825288
-* `spread1`: -7.964984 → -2.434031
-* `spread2`: 0.006274 → 0.450493
-* `D2`: 1.423287 → 3.671155
-* `PPE`: 0.044539 → 0.527367
+**Statistical outliers**
+Values outside the Tukey fences computed with the IQR rule using multiplier 1.5. These are treated with winsorization, meaning they are clipped to the nearest fence. This approach preserves dataset size, which matters for small datasets.
 
-**Task #5 — Outliers / errors**
-Definitions used:
-
-* **Errors (domain violations):** values that violate conservative domain rules (e.g., negative frequencies, `RPDE`/`DFA` outside [0,1]).
-  Treatment: set to NaN → median imputation (numeric).
-* **Outliers (statistical extremes):** Tukey IQR rule with **k=1.5** (outside `[Q1 - 1.5·IQR, Q3 + 1.5·IQR]`).
-  Treatment: **winsorization** (clip to the IQR fences), to preserve the small dataset size.
-
-Observed:
+### Findings
 
 * Domain violations detected: **none**
-* IQR outliers detected (before winsorization): **173 cells**
-  Most affected columns:
+* IQR outliers detected: **173 individual cells**
+* Winsorized values: **173**
+* Median imputation was not required because no invalid or missing values remained
 
-  * `NHR` (19), `MDVP:PPQ` (15), `Jitter:DDP` (14), `MDVP:Jitter(%)` (14), `MDVP:RAP` (14),
-  * `Shimmer:APQ5` (13), `MDVP:APQ` (12), `MDVP:Fhi(Hz)` (11), `MDVP:Shimmer(dB)` (10), `MDVP:Flo(Hz)` (9), ...
-* Winsorized (clipped) cells: **173**
-* Median imputation: **not needed** (no invalid/missing values after checks)
+The cleaned dataset is written to `dataset/parkinsons_stage3.csv`.
 
-A cleaned dataset after winsorization was saved to: `dataset/parkinsons_stage3.csv`.
+### Correlation structure
 
-**Task #6 — Correlation matrix**
+The correlation matrix confirms substantial redundancy among several feature families. Some pairs are effectively duplicates:
 
-* Pearson correlation matrix was computed for **all numeric features** (target excluded) and saved to:
-  `reports/corr_stage3.csv`.
+* `MDVP:RAP` and `Jitter:DDP` are perfectly correlated
+* Several shimmer-based features are near-duplicates
 
-Top 15 correlated feature pairs (by |corr|):
+This suggests that baseline models may benefit from regularization and that multicollinearity should be considered when interpreting coefficients in linear models.
 
-* `MDVP:RAP` vs `Jitter:DDP`: **1.000**
-* `Shimmer:APQ3` vs `Shimmer:DDA`: **1.000**
-* `MDVP:Shimmer` vs `MDVP:Shimmer(dB)`: **0.992**
-* `MDVP:Shimmer` vs `Shimmer:APQ3`: **0.990**
-* `MDVP:Shimmer` vs `Shimmer:DDA`: **0.990**
-* `MDVP:Shimmer` vs `Shimmer:APQ5`: **0.985**
-* `MDVP:Jitter(%)` vs `Jitter:DDP`: **0.979**
-* `MDVP:Jitter(%)` vs `MDVP:RAP`: **0.979**
-* `MDVP:Shimmer(dB)` vs `Shimmer:APQ5`: **0.978**
-* `MDVP:Shimmer(dB)` vs `Shimmer:APQ3`: **0.976**
-* `MDVP:Shimmer(dB)` vs `Shimmer:DDA`: **0.976**
-* `MDVP:Shimmer` vs `MDVP:APQ`: **0.970**
-* `Shimmer:APQ3` vs `Shimmer:APQ5`: **0.969**
-* `Shimmer:APQ5` vs `Shimmer:DDA`: **0.969**
-* `MDVP:Jitter(%)` vs `MDVP:PPQ`: **0.968**
+---
 
-### Notes
+## Stage 4
 
-* Several feature groups are **near-duplicates** (correlations ≈ 0.97–1.00), reflecting that many jitter/shimmer measures are derived from closely related formulas.
-* Winsorization reduces the influence of extreme values while preserving the dataset size; later modeling may additionally benefit from scaling and/or feature selection to address multicollinearity.
+Visualization and qualitative interpretation
+
+This stage produces publication quality plots that describe distributional shape, class imbalance, subject structure, feature-target relationships, and feature redundancy.
+
+### Run
+
+```bash
+python 4_visualize_data.py --input dataset/parkinsons_stage3.csv --output-dir reports/stage4_figures
+```
+
+### Figures produced
+
+All figures are saved under `reports/stage4_figures`.
+
+#### Recordings per subject
+
+This plot shows how many recordings are available per derived subject identifier. The distribution is tightly concentrated, with most subjects contributing six recordings and a small number contributing seven. This supports the use of group-aware evaluation strategies.
+
+![Recordings per subject](reports/stage4_figures/bar_recordings_per_subject.png)
+
+#### Target distribution
+
+The dataset is strongly imbalanced toward the Parkinson’s class. This motivates careful metric selection and group-aware validation.
+
+![Target distribution](reports/stage4_figures/bar_status.png)
+
+#### Histograms of numeric features
+
+The feature distributions show a mix of approximately unimodal variables and clearly skewed variables. Skewness and heavy tails are common in biomedical signal-derived features and justify robust preprocessing such as winsorization and scaling.
+
+![Histograms page 1](reports/stage4_figures/hist_numeric_page_01.png)
+![Histograms page 2](reports/stage4_figures/hist_numeric_page_02.png)
+
+#### Feature separation by class
+
+The boxplots highlight features that show clear distributional shifts between healthy controls and Parkinson’s recordings. In particular, features such as `PPE`, `spread1`, and `spread2` show noticeable separation, suggesting they carry substantial discriminative signal.
+
+![Top features by class](reports/stage4_figures/box_top_features_by_status.png)
+
+#### Feature values versus target
+
+These scatterplots show the same relationships with explicit visibility of overlap and outliers. They reinforce that several features exhibit measurable shifts between classes, while still leaving room for overlap, which is expected in real biomedical data.
+
+![Top features versus target](reports/stage4_figures/scatter_top_features_vs_target.png)
+
+#### Pairwise relationships among informative features
+
+The pairwise plot provides a compact view of both feature-feature relationships and class separation in a low-dimensional projection. It also makes redundancy visible: some feature pairs align along near-linear trends, indicating strong collinearity.
+
+![Pairwise relationships](reports/stage4_figures/pairplot_top_features.png)
+
+#### Correlation heatmap for the same subset
+
+The heatmap summarizes the correlation structure for the selected top features and confirms that some variables are strongly correlated. This supports later use of regularization or feature selection to stabilize models and reduce redundancy.
+
+![Correlation heatmap](reports/stage4_figures/heatmap_corr_top_features.png)
+
+### Summary interpretation
+
+The dataset provides strong evidence of signal relevant to Parkinson’s detection, with several features showing clear distributional shifts. At the same time, the dataset has three properties that shape modeling choices:
+
+* Significant class imbalance toward Parkinson’s recordings
+* Multiple recordings per subject that require group-aware validation
+* High redundancy among feature families such as jitter and shimmer measures
+
+A principled baseline model should therefore use group-aware splitting, robust metrics, and some mechanism to manage redundancy, such as regularization.
+
+---
+
+## How to run the full pipeline so far
+
+```bash
+python 0_data_profile.py --input dataset/parkinsons.data
+python 1_missing_values.py --input dataset/parkinsons.data --output dataset/parkinsons_clean.csv
+python 2_types_and_stats.py --input dataset/parkinsons_clean.csv --output dataset/parkinsons_typed.csv
+python 3_feature_audit_outliers_corr.py --input dataset/parkinsons_typed.csv --output dataset/parkinsons_stage3.csv --corr-output reports/corr_stage3.csv
+python 4_visualize_data.py --input dataset/parkinsons_stage3.csv --output-dir reports/stage4_figures
+```
+
+---
+
+## Next steps
+
+The next stage of the project is baseline classification with correct validation. A strong academic baseline should include:
+
+* Subject-based splitting using GroupKFold or GroupShuffleSplit
+* Standardization and robust preprocessing
+* Baseline models such as logistic regression with regularization and tree-based methods
+* Evaluation with ROC AUC, PR AUC, balanced accuracy, and confidence intervals where appropriate
+
+

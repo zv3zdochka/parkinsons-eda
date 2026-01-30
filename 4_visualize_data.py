@@ -2,13 +2,17 @@
 """
 Stage 4 — Data visualization (matplotlib + optional seaborn).
 
-Tasks covered (from the spec)
-----------------------------
-7) Visualize the data:
-   - histograms for numeric variables
-   - pairwise relationships between variables (scatterplots) and with the target
-   - bar charts for categorical variables
-   - provide intermediate conclusions
+What was changed (relative to your current version)
+---------------------------------------------------
+The `pairplot_top_features.png` was reworked to be more readable and compact:
+- switched from `sns.pairplot(...)` to an explicit `sns.PairGrid(...)` so we can:
+  * control legend placement (inside the figure, no huge empty right margin),
+  * control subplot sizing consistently,
+  * keep the same "corner" layout but with tighter spacing,
+  * use consistent scatter/hist settings across seaborn versions.
+
+Everything else (bars, hist pages, boxplots, scatter-vs-target, heatmap, console report)
+is kept compatible with the existing pipeline and CLI.
 
 Outputs
 -------
@@ -18,22 +22,13 @@ Images are saved to an output directory (default: reports/stage4_figures):
   - hist_numeric_page_*.png
   - box_top_features_by_status.png
   - scatter_top_features_vs_target.png
-  - pairplot_top_features.png (requires seaborn; falls back gracefully)
-  - heatmap_corr_top_features.png (requires seaborn; falls back gracefully)
-
-Console output includes:
-  - where plots were saved
-  - class balance
-  - top features associated with the target (Pearson corr with binary target)
-  - multicollinearity indicator (#pairs with |corr| >= threshold)
-  - brief intermediate conclusions
+  - pairplot_top_features.png          (requires seaborn; improved layout)
+  - heatmap_corr_top_features.png      (requires seaborn; minor label tweaks)
 
 Recommended input
 -----------------
 Use the cleaned dataset from Stage 3 (after winsorization):
   dataset/parkinsons_stage3.csv
-
-But any compatible CSV is accepted.
 """
 
 from __future__ import annotations
@@ -44,6 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
@@ -107,8 +103,8 @@ def _subject_id_from_name(name: pd.Series) -> pd.Series:
     """
     Extract a subject identifier from 'name'.
 
-    The typical format is like: phon_R01_S01_1
-    Subject id: phon_R01_S01 (everything except the trailing recording index).
+    Typical format: phon_R01_S01_1
+    Subject id:     phon_R01_S01  (everything except the trailing recording index).
     """
     return name.astype("string").str.rsplit("_", n=1).str[0]
 
@@ -127,8 +123,8 @@ def _target_balance(df: pd.DataFrame, target_column: str) -> Tuple[pd.Series, pd
 
 def _top_features_by_target_corr(df: pd.DataFrame, numeric_cols: List[str], target_column: str, top_k: int) -> pd.DataFrame:
     """
-    For a binary 0/1 target, Pearson correlation with the target is equivalent to a point-biserial correlation.
-    This is a quick way to identify features most associated with the label (not a causal claim).
+    For a binary 0/1 target, Pearson correlation with the target equals point-biserial correlation.
+    This is a quick association scan (not a causal claim).
     """
     rows = []
     y = df[target_column]
@@ -170,10 +166,14 @@ def _save_bar_recordings_per_subject(df: pd.DataFrame, id_column: str, out_dir: 
     ax.set_xlabel("subjects (sorted)")
     ax.set_ylabel("number of recordings")
 
-    # Do not print subject labels (too crowded); show summary instead
-    ax.text(0.99, 0.95,
-            f"subjects: {len(counts)}\nmin: {int(counts.min())}  median: {float(counts.median()):.1f}  max: {int(counts.max())}",
-            transform=ax.transAxes, ha="right", va="top")
+    ax.text(
+        0.99,
+        0.95,
+        f"subjects: {len(counts)}\nmin: {int(counts.min())}  median: {float(counts.median()):.1f}  max: {int(counts.max())}",
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+    )
 
     fig.tight_layout()
     path = out_dir / "bar_recordings_per_subject.png"
@@ -183,9 +183,7 @@ def _save_bar_recordings_per_subject(df: pd.DataFrame, id_column: str, out_dir: 
 
 
 def _save_histograms(df: pd.DataFrame, numeric_cols: List[str], out_dir: Path, *, rows: int, cols: int, dpi: int) -> List[Path]:
-    """
-    Save histograms for all numeric columns as multiple "pages" (grid images).
-    """
+    """Save histograms for all numeric columns as multiple "pages" (grid images)."""
     per_page = rows * cols
     paths: List[Path] = []
 
@@ -201,7 +199,6 @@ def _save_histograms(df: pd.DataFrame, numeric_cols: List[str], out_dir: Path, *
             ax.set_xlabel("value")
             ax.set_ylabel("count")
 
-        # Hide unused axes
         for ax in axes[len(page_cols):]:
             ax.axis("off")
 
@@ -218,9 +215,7 @@ def _save_histograms(df: pd.DataFrame, numeric_cols: List[str], out_dir: Path, *
 
 
 def _save_boxplots_top_features(df: pd.DataFrame, top_features: List[str], target_column: str, out_dir: Path, *, dpi: int) -> Path:
-    """
-    Boxplots of selected features split by status.
-    """
+    """Boxplots of selected features split by status."""
     n = len(top_features)
     fig, axes = plt.subplots(n, 1, figsize=(9, max(3, 2.2 * n)))
     if n == 1:
@@ -242,11 +237,7 @@ def _save_boxplots_top_features(df: pd.DataFrame, top_features: List[str], targe
 
 
 def _save_scatter_top_features_vs_target(df: pd.DataFrame, top_features: List[str], target_column: str, out_dir: Path, *, dpi: int) -> Path:
-    """
-    Scatter: feature value vs target (0/1) with jitter on y for readability.
-    """
-    import numpy as np
-
+    """Scatter: feature value vs target (0/1) with jitter on y for readability."""
     n = len(top_features)
     fig, axes = plt.subplots(n, 1, figsize=(9, max(3, 2.2 * n)))
     if n == 1:
@@ -256,13 +247,12 @@ def _save_scatter_top_features_vs_target(df: pd.DataFrame, top_features: List[st
 
     for ax, col in zip(axes, top_features):
         y = df[target_column].astype(float).values
-        y_jitter = y + rng.normal(0, 0.03, size=len(y))  # small vertical jitter
+        y_jitter = y + rng.normal(0, 0.03, size=len(y))
 
         ax.scatter(df[col].values, y_jitter, s=14, alpha=0.7)
         ax.set_title(f"{col} vs {target_column}")
         ax.set_xlabel(col)
         ax.set_ylabel(target_column)
-
         ax.set_yticks([0, 1])
         ax.set_yticklabels(["0", "1"])
 
@@ -274,7 +264,7 @@ def _save_scatter_top_features_vs_target(df: pd.DataFrame, top_features: List[st
     return path
 
 
-def _save_pairplot_and_heatmap_seaborn(
+def _save_pairplot_compact_and_heatmap_seaborn(
     df: pd.DataFrame,
     top_features: List[str],
     target_column: str,
@@ -283,40 +273,86 @@ def _save_pairplot_and_heatmap_seaborn(
     dpi: int,
 ) -> Tuple[Optional[Path], Optional[Path]]:
     """
-    Pairplot and correlation heatmap for selected features.
-    Requires seaborn; if seaborn is not available, returns (None, None).
+    Compact pairwise plot + correlation heatmap for selected features.
+
+    Why PairGrid instead of seaborn.pairplot?
+    - Pairplot tends to place the legend outside, creating a large blank area.
+    - PairGrid gives explicit control over legend position and spacing.
     """
     sns = _try_import_seaborn()
     if sns is None:
         return None, None
 
-    # Pairplot can be slow; keep feature count small
+    # Prepare data for seaborn
     pair_df = df[top_features + [target_column]].copy()
     pair_df[target_column] = pair_df[target_column].astype("category")
 
+    # --- PairGrid (compact, legend inside) ---
     pair_path = out_dir / "pairplot_top_features.png"
-    g = sns.pairplot(pair_df, hue=target_column, diag_kind="hist", corner=True, plot_kws={"s": 18, "alpha": 0.7})
-    g.fig.suptitle("Pairwise relationships (top features)", y=1.02)
-    g.fig.savefig(pair_path, dpi=dpi, bbox_inches="tight")
-    plt.close(g.fig)
 
+    grid = sns.PairGrid(
+        data=pair_df,
+        vars=top_features,
+        hue=target_column,
+        corner=True,
+        height=2.25,
+        diag_sharey=False,
+    )
+
+    # Lower triangle: scatter
+    grid.map_lower(
+        sns.scatterplot,
+        s=18,
+        alpha=0.75,
+        linewidth=0,
+    )
+
+    # Diagonal: histogram
+    grid.map_diag(
+        sns.histplot,
+        bins=18,
+        alpha=0.75,
+    )
+
+    # Legend: keep it *inside* the figure (prevents wide blank margins)
+    grid.add_legend(title=target_column)
+    if grid._legend is not None:
+        grid._legend.set_bbox_to_anchor((0.98, 0.98))
+        grid._legend.set_loc("upper right")
+        grid._legend.get_frame().set_alpha(0.9)
+
+    grid.fig.suptitle("Pairwise relationships (top features)", y=1.02)
+
+    # Tighten layout without pushing legend outside
+    grid.fig.subplots_adjust(top=0.93, right=0.98)
+    grid.fig.savefig(pair_path, dpi=dpi, bbox_inches="tight", pad_inches=0.05)
+    plt.close(grid.fig)
+
+    # --- Heatmap for the same subset ---
     heat_path = out_dir / "heatmap_corr_top_features.png"
     corr = df[top_features].corr(method="pearson")
+
     fig, ax = plt.subplots(figsize=(9, 7))
-    sns.heatmap(corr, ax=ax, annot=False, square=True)
+    sns.heatmap(corr, ax=ax, annot=False, square=True, cbar=True)
     ax.set_title("Correlation heatmap (top features)")
+
+    # Improve readability of tick labels a bit
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
+    ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
+
     fig.tight_layout()
-    fig.savefig(heat_path, dpi=dpi)
+    fig.savefig(heat_path, dpi=dpi, bbox_inches="tight", pad_inches=0.05)
     plt.close(fig)
 
     return pair_path, heat_path
 
 
 def _count_high_corr_pairs(df: pd.DataFrame, numeric_cols: List[str], *, threshold: float) -> int:
+    """Count feature pairs with |corr| >= threshold (upper triangle only, excluding diagonal)."""
     corr = df[numeric_cols].corr().abs()
-    # Count upper-triangle entries above threshold excluding diagonal
-    mask = (corr.where(~pd.np.tril(pd.np.ones(corr.shape)).astype(bool))).stack()  # type: ignore[attr-defined]
-    return int((mask >= threshold).sum())
+    upper = np.triu(np.ones(corr.shape, dtype=bool), k=1)
+    vals = corr.where(upper).stack()
+    return int((vals >= threshold).sum())
 
 
 def _print_intermediate_conclusions(
@@ -329,12 +365,9 @@ def _print_intermediate_conclusions(
 ) -> None:
     counts, pct = _target_balance(df, target_column)
 
-    # Skewness quick scan (non-robust but useful for a first look)
     skew = df[numeric_cols].skew(numeric_only=True).sort_values(key=lambda s: s.abs(), ascending=False)
     skew_top = skew.head(6)
 
-    # Multicollinearity indicator
-    # (avoid heavy printing; just report a count)
     try:
         high_corr_pairs = _count_high_corr_pairs(df, numeric_cols, threshold=corr_threshold)
     except Exception:
@@ -380,11 +413,7 @@ def run(
     output_dir: str | Path = "reports/stage4_figures",
     config: VizConfig = VizConfig(top_k_features=6, hist_cols=4, hist_rows=4, corr_threshold=0.95, dpi=160),
 ) -> None:
-    """
-    Orchestrator-friendly entrypoint.
-
-    Creates a set of plots for EDA and prints intermediate conclusions.
-    """
+    """Orchestrator-friendly entrypoint: generates plots and prints a concise EDA summary."""
     input_csv = Path(input_csv)
     if not input_csv.exists():
         raise FileNotFoundError(f"CSV not found: {input_csv}")
@@ -399,25 +428,22 @@ def run(
     if not numeric_cols:
         raise ValueError("No numeric feature columns found; cannot create histograms/correlations.")
 
-    # Choose features to focus on for pairwise visuals:
     top_corr = _top_features_by_target_corr(df, numeric_cols, target_column, top_k=config.top_k_features)
     top_features = top_corr["feature"].tolist()
 
-    # Plots
-    paths = []
+    paths: List[Path] = []
     paths.append(_save_bar_status(df, target_column, out_dir, dpi=config.dpi))
     paths.append(_save_bar_recordings_per_subject(df, id_column, out_dir, dpi=config.dpi))
     paths.extend(_save_histograms(df, numeric_cols, out_dir, rows=config.hist_rows, cols=config.hist_cols, dpi=config.dpi))
     paths.append(_save_boxplots_top_features(df, top_features, target_column, out_dir, dpi=config.dpi))
     paths.append(_save_scatter_top_features_vs_target(df, top_features, target_column, out_dir, dpi=config.dpi))
 
-    pair_path, heat_path = _save_pairplot_and_heatmap_seaborn(df, top_features, target_column, out_dir, dpi=config.dpi)
+    pair_path, heat_path = _save_pairplot_compact_and_heatmap_seaborn(df, top_features, target_column, out_dir, dpi=config.dpi)
     if pair_path is not None:
         paths.append(pair_path)
     if heat_path is not None:
         paths.append(heat_path)
 
-    # Report
     print("=" * 74)
     print("Stage 4: Visualizations")
     print("=" * 74)
@@ -437,7 +463,6 @@ def run(
         corr_threshold=config.corr_threshold,
     )
 
-    # Note about seaborn availability
     if _try_import_seaborn() is None:
         print("Note: seaborn is not available. Pairplot and heatmap were skipped.")
         print("      Install seaborn if you want those plots: pip install seaborn")
@@ -446,16 +471,8 @@ def run(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Stage 4: Visualize numeric/categorical variables and relationships.")
-    parser.add_argument(
-        "--input",
-        required=True,
-        help="Path to dataset CSV (recommended: dataset/parkinsons_stage3.csv).",
-    )
-    parser.add_argument(
-        "--output-dir",
-        default="reports/stage4_figures",
-        help="Directory to save images (default: reports/stage4_figures).",
-    )
+    parser.add_argument("--input", required=True, help="Path to dataset CSV (recommended: dataset/parkinsons_stage3.csv).")
+    parser.add_argument("--output-dir", default="reports/stage4_figures", help="Directory to save images.")
     parser.add_argument("--id-column", default="name", help="ID column name (default: name).")
     parser.add_argument("--target-column", default="status", help="Target column name (default: status).")
     parser.add_argument("--top-k", type=int, default=6, help="How many top features to use in pairwise plots (default: 6).")
